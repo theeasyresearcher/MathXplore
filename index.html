@@ -61,7 +61,7 @@ function send(text){
   }else window.open('https://wa.me/?text='+enc,'_blank');
 }
 const shareOne=p=>send(line(p)+'\n\nMore openings: '+site()+'#'+p.id+'\nFollow the channel: '+CFG.CHANNEL);
-const digest=a=>'*mathXplore: Math openings*\n\n'+a.map((p,i)=>line(p,i+1)).join('\n\n')+'\n\nAll posts: '+site()+'\nFollow the channel: '+CFG.CHANNEL;
+const digest=a=>'*MathXplore: All about Mathematics*\n\n'+a.map((p,i)=>line(p,i+1)).join('\n\n')+'\n\nAll posts: '+site()+'\nFollow the channel: '+CFG.CHANNEL;
 function shareSel(){
   const a=sort(posts.filter(p=>sel.has(p.id)));
   if(a.length)send(digest(a));
