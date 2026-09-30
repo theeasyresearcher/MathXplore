@@ -21,6 +21,7 @@
 <nav class="tabs" id="tabs"></nav>
 <div class="bar">
   <input type="search" id="q" placeholder="Search posts" aria-label="Search posts">
+  <select id="sort" aria-label="Sort by" style="width:auto"><option value="deadline">Sort: Deadline</option><option value="updated">Sort: Last updated</option></select>
   <div class="seg" id="mode"><button data-mode="open" class="on">Open</button><button data-mode="archive">Archive</button></div>
   <button class="btn" id="all">Select all shown</button>
   <button class="btn cpy">Copy digest</button>
@@ -42,7 +43,7 @@ const CATS={conference:'Conference',phd:'PhD',postdoc:'Postdoc',staff:'Project s
 const $=s=>document.querySelector(s);
 const sb=supabase.createClient(CFG.URL,CFG.KEY);
 $('#follow').href=CFG.CHANNEL;
-let posts=[],cat='all',mode='open',sel=new Set(),hl=location.hash.slice(1);
+let posts=[],cat='all',mode='open',by='deadline',sel=new Set(),hl=location.hash.slice(1);
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const site=()=>location.href.split('#')[0];
 const days=d=>Math.ceil((new Date(d+'T23:59:59')-Date.now())/864e5);
@@ -61,7 +62,7 @@ function send(text){
   }else window.open('https://wa.me/?text='+enc,'_blank');
 }
 const shareOne=p=>send(line(p)+'\n\nMore openings: '+site()+'#'+p.id+'\nFollow the channel: '+CFG.CHANNEL);
-const digest=a=>'*MathXplore: All about Mathematics*\n\n'+a.map((p,i)=>line(p,i+1)).join('\n\n')+'\n\nAll posts: '+site()+'\nFollow the channel: '+CFG.CHANNEL;
+const digest=a=>'*mathXplore: Math openings*\n\n'+a.map((p,i)=>line(p,i+1)).join('\n\n')+'\n\nAll posts: '+site()+'\nFollow the channel: '+CFG.CHANNEL;
 function shareSel(){
   const a=sort(posts.filter(p=>sel.has(p.id)));
   if(a.length)send(digest(a));
@@ -78,6 +79,7 @@ function copyDigest(btn){
 function sort(a){return a.slice().sort((x,y)=>{
   const ox=isOpen(x),oy=isOpen(y);if(ox!==oy)return ox?-1:1;
   if(x.pinned!==y.pinned)return x.pinned?-1:1;
+  if(by==='updated')return (y.updated_at||'')<(x.updated_at||'')?-1:1;
   if(!x.deadline)return 1;if(!y.deadline)return -1;return x.deadline<y.deadline?-1:1})}
 
 function card(p){
@@ -86,7 +88,7 @@ function card(p){
   return '<article class="card'+(hl===p.id?' hl':'')+'" id="'+p.id+'">'+
    '<input type="checkbox" class="pick" data-id="'+p.id+'" aria-label="Select post"'+(sel.has(p.id)?' checked':'')+'>'+
    '<div class="body"><span class="b cat">'+CATS[p.category]+'</span>'+(p.pinned?'<span class="b">Pinned</span>':'')+badge+
-   '<h2>'+esc(p.title)+'</h2>'+
+   '<h2>'+esc(p.title)+'</h2>'+(by==='updated'&&p.updated_at?'<div class="meta">Updated '+fmt(p.updated_at.slice(0,10))+'</div>':'')+
    (p.info?'<details><summary>Details</summary><pre>'+esc(p.info)+'</pre></details>':'')+
    '<div class="act">'+(p.url?'<a class="btn pri" target="_blank" rel="noopener" href="'+esc(p.url)+'">Open link</a>':'')+
    '<button class="btn wa" data-share="'+p.id+'">Share</button></div></div></article>';
@@ -94,7 +96,8 @@ function card(p){
 function shown(){
   const q=$('#q').value.toLowerCase(),arch=mode==='archive';
   const a=posts.filter(p=>(cat==='all'||p.category===cat)&&(arch?!isOpen(p):isOpen(p))&&(p.title+' '+(p.info||'')).toLowerCase().includes(q));
-  return arch?a.sort((x,y)=>(y.deadline||'')<(x.deadline||'')?-1:1):sort(a);
+  if(arch)return a.sort((x,y)=>by==='updated'?((y.updated_at||'')<(x.updated_at||'')?-1:1):((y.deadline||'')<(x.deadline||'')?-1:1));
+  return sort(a);
 }
 function bar(){
   $('#sel').classList.toggle('on',sel.size>0);
@@ -111,6 +114,7 @@ function render(){
 
 $('#tabs').onclick=e=>{if(e.target.dataset.cat){cat=e.target.dataset.cat;render()}};
 $('#q').oninput=render;
+$('#sort').onchange=()=>{by=$('#sort').value;render()};
 $('#mode').onclick=e=>{if(e.target.dataset.mode){mode=e.target.dataset.mode;render()}};
 $('#all').onclick=()=>{shown().forEach(p=>sel.add(p.id));render()};
 $('#clr').onclick=()=>{sel.clear();render()};
