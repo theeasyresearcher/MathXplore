@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mathXplore | Math opportunities</title>
+<meta name="description" content="Conferences, PhD, postdoc, project staff and faculty openings in mathematics, from the mathXplore WhatsApp channel.">
+<meta property="og:title" content="mathXplore | Math opportunities">
+<meta property="og:description" content="Conferences, PhD, postdoc, project staff and faculty openings in mathematics.">
+<link rel="icon" href="logo.jpg">
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<header class="brand">
+  <div class="logo" role="img" aria-label="mathXplore logo"></div>
+  <div><h1>mathXplore</h1><p class="sub">Math opportunities: conferences, PhD, postdoc, project staff and faculty posts.</p></div>
+</header>
+<p class="follow"><a class="btn wa" id="follow" target="_blank" rel="noopener" href="#">Follow the channel on WhatsApp</a></p>
+<nav class="tabs" id="tabs"></nav>
+<div class="bar">
+  <input type="search" id="q" placeholder="Search posts" aria-label="Search posts">
+  <div class="seg" id="mode"><button data-mode="open" class="on">Open</button><button data-mode="archive">Archive</button></div>
+  <button class="btn" id="all">Select all shown</button>
+  <button class="btn cpy">Copy digest</button>
+</div>
+<div id="list"><p class="empty">Loading…</p></div>
+</main>
+
+<div id="sel">
+  <span id="cnt"></span>
+  <button class="btn wa" id="go">Share on WhatsApp</button>
+  <button class="btn cpy">Copy digest</button>
+  <button class="btn" id="clr">Clear</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+const CATS={conference:'Conference',phd:'PhD',postdoc:'Postdoc',staff:'Project staff',faculty:'Faculty'};
+const $=s=>document.querySelector(s);
+const sb=supabase.createClient(CFG.URL,CFG.KEY);
+$('#follow').href=CFG.CHANNEL;
+let posts=[],cat='all',mode='open',sel=new Set(),hl=location.hash.slice(1);
+const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const site=()=>location.href.split('#')[0];
+const days=d=>Math.ceil((new Date(d+'T23:59:59')-Date.now())/864e5);
+const fmt=d=>new Date(d+'T00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+const isOpen=p=>!p.deadline||days(p.deadline)>=0;
+
+function line(p,i){
+  return (i?i+'. ':'')+'*'+CATS[p.category]+': '+p.title+'*'+(p.deadline?'\nDeadline: '+fmt(p.deadline):'')+(p.url?'\n'+p.url:'');
+}
+function send(text){
+  const enc=encodeURIComponent(text);
+  if(enc.length>3500){
+    (navigator.clipboard?navigator.clipboard.writeText(text):Promise.resolve()).then(()=>{
+      alert('Too long for a link, so the message is copied. Paste it into WhatsApp.');
+      window.open('https://wa.me/','_blank');});
+  }else window.open('https://wa.me/?text='+enc,'_blank');
+}
+const shareOne=p=>send(line(p)+'\n\nMore openings: '+site()+'#'+p.id+'\nFollow the channel: '+CFG.CHANNEL);
+const digest=a=>'*mathXplore: Math openings*\n\n'+a.map((p,i)=>line(p,i+1)).join('\n\n')+'\n\nAll posts: '+site()+'\nFollow the channel: '+CFG.CHANNEL;
+function shareSel(){
+  const a=sort(posts.filter(p=>sel.has(p.id)));
+  if(a.length)send(digest(a));
+}
+/* Copies selected posts, or everything currently shown if nothing is selected */
+function copyDigest(btn){
+  const a=sel.size?sort(posts.filter(p=>sel.has(p.id))):shown();
+  if(!a.length)return;
+  const text=digest(a);
+  const done=()=>{btn.textContent='Copied '+a.length;setTimeout(()=>btn.textContent='Copy digest',1500)};
+  if(navigator.clipboard)navigator.clipboard.writeText(text).then(done,()=>prompt('Copy this message:',text));
+  else{const t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();done()}
+}
+function sort(a){return a.slice().sort((x,y)=>{
+  const ox=isOpen(x),oy=isOpen(y);if(ox!==oy)return ox?-1:1;
+  if(x.pinned!==y.pinned)return x.pinned?-1:1;
+  if(!x.deadline)return 1;if(!y.deadline)return -1;return x.deadline<y.deadline?-1:1})}
+
+function card(p){
+  const d=p.deadline?days(p.deadline):null;
+  const badge=d===null?'':d<0?'<span class="b old">Closed '+fmt(p.deadline)+'</span>':d<=7?'<span class="b soon">'+(d===0?'Closes today':d+(d===1?' day left':' days left'))+'</span>':'<span class="b">Closes '+fmt(p.deadline)+'</span>';
+  return '<article class="card'+(hl===p.id?' hl':'')+'" id="'+p.id+'">'+
+   '<input type="checkbox" class="pick" data-id="'+p.id+'" aria-label="Select post"'+(sel.has(p.id)?' checked':'')+'>'+
+   '<div class="body"><span class="b cat">'+CATS[p.category]+'</span>'+(p.pinned?'<span class="b">Pinned</span>':'')+badge+
+   '<h2>'+esc(p.title)+'</h2>'+
+   (p.info?'<details><summary>Details</summary><pre>'+esc(p.info)+'</pre></details>':'')+
+   '<div class="act">'+(p.url?'<a class="btn pri" target="_blank" rel="noopener" href="'+esc(p.url)+'">Open link</a>':'')+
+   '<button class="btn wa" data-share="'+p.id+'">Share</button></div></div></article>';
+}
+function shown(){
+  const q=$('#q').value.toLowerCase(),arch=mode==='archive';
+  const a=posts.filter(p=>(cat==='all'||p.category===cat)&&(arch?!isOpen(p):isOpen(p))&&(p.title+' '+(p.info||'')).toLowerCase().includes(q));
+  return arch?a.sort((x,y)=>(y.deadline||'')<(x.deadline||'')?-1:1):sort(a);
+}
+function bar(){
+  $('#sel').classList.toggle('on',sel.size>0);
+  $('#cnt').textContent=sel.size+' selected';
+}
+function render(){
+  $('#tabs').innerHTML=['all',...Object.keys(CATS)].map(k=>'<button data-cat="'+k+'" class="'+(cat===k?'on':'')+'">'+(k==='all'?'All':CATS[k])+'</button>').join('');
+  document.querySelectorAll('#mode button').forEach(b=>b.classList.toggle('on',b.dataset.mode===mode));
+  const a=shown();
+  $('#list').innerHTML=a.length?a.map(card).join(''):'<p class="empty">'+(mode==='archive'?'Nothing in the archive yet.':'No open posts match.')+'</p>';
+  bar();
+  if(hl){const el=document.getElementById(hl);if(el)el.scrollIntoView({block:'center'});hl=''}
+}
+
+$('#tabs').onclick=e=>{if(e.target.dataset.cat){cat=e.target.dataset.cat;render()}};
+$('#q').oninput=render;
+$('#mode').onclick=e=>{if(e.target.dataset.mode){mode=e.target.dataset.mode;render()}};
+$('#all').onclick=()=>{shown().forEach(p=>sel.add(p.id));render()};
+$('#clr').onclick=()=>{sel.clear();render()};
+$('#go').onclick=shareSel;
+document.querySelectorAll('.cpy').forEach(b=>b.onclick=()=>copyDigest(b));
+$('#list').onclick=e=>{
+  if(e.target.dataset.share)shareOne(posts.find(p=>p.id===e.target.dataset.share));
+};
+$('#list').onchange=e=>{
+  const id=e.target.dataset.id;if(!id)return;
+  e.target.checked?sel.add(id):sel.delete(id);bar();
+};
+
+sb.from('posts').select('*').eq('published',true).then(({data,error})=>{
+  if(error){$('#list').innerHTML='<p class="empty">Could not load posts. Check config.js.</p>';return}
+  posts=data;
+  const h=posts.find(p=>p.id===hl);if(h&&!isOpen(h))mode='archive';
+  render();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Admin | mathXplore</title>
+<link rel="icon" href="logo.jpg">
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<header class="brand"><div class="logo" role="img" aria-label="mathXplore logo"></div><div><h1>mathXplore admin</h1></div></header>
+
+<section class="panel" id="login">
+  <label for="em">Email</label><input id="em" type="email" autocomplete="username">
+  <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
+  <p class="err" id="lerr"></p>
+  <button class="btn pri" id="in">Log in</button>
+</section>
+
+<div id="app" style="display:none">
+  <div class="bar"><a href="index.html">View site</a><button class="btn" id="out">Log out</button></div>
+
+  <section class="panel">
+    <h2 id="ftitle" style="margin:0 0 4px;font:700 20px Alegreya,Georgia,serif">New post</h2>
+    <label for="info">Paste the message here</label>
+    <textarea id="info" placeholder="Paste the full post. Category, title, deadline and link fill in automatically."></textarea>
+    <div class="act"><button class="btn" id="ai">Improve with AI (optional)</button></div>
+    <p class="warnbox" id="dup" hidden></p>
+
+    <label for="cat">Category</label><select id="cat"></select>
+    <label for="title">Title</label><input id="title">
+    <label for="url">URL</label><input id="url" type="url" placeholder="https://">
+    <label for="dl">Deadline or event date</label><input id="dl" type="date">
+    <label class="chk"><input type="checkbox" id="pin"> Pin to top</label>
+    <label class="chk"><input type="checkbox" id="pub" checked> Publish on the site</label>
+    <label class="chk"><input type="checkbox" id="det"> Include details in the channel post</label>
+    <p class="err" id="ferr"></p>
+    <div class="act">
+      <button class="btn pri" id="save">Save post</button>
+      <button class="btn wa" id="chan">Copy channel post</button>
+      <button class="btn" id="cancel" style="display:none">Cancel edit</button>
+    </div>
+  </section>
+
+  <h2 style="font:700 20px Alegreya,Georgia,serif">All posts</h2>
+  <div id="list"></div>
+</div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+const CATS={conference:'Conference',phd:'PhD',postdoc:'Postdoc',staff:'Project staff',faculty:'Faculty'};
+const $=s=>document.querySelector(s);
+const sb=supabase.createClient(CFG.URL,CFG.KEY);
+const SITE=location.href.split('#')[0].replace(/admin\.html.*$/,'');
+let posts=[],editId=null;const touched=new Set();
+const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=d=>new Date(d+'T00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+$('#cat').innerHTML=Object.entries(CATS).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('');
+
+/* ---------- paste-to-fill ---------- */
+const MON='jan feb mar apr may jun jul aug sep oct nov dec'.split(' ');
+const iso=(y,m,d)=>y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+function findDates(t){
+  const out=[],mp='(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?';let m;
+  const a=new RegExp('(\\d{1,2})(?:st|nd|rd|th)?[\\s-]+'+mp+',?\\s+(\\d{4})','gi');
+  while(m=a.exec(t))out.push({i:m.index,d:iso(m[3],MON.indexOf(m[2].toLowerCase())+1,m[1])});
+  const b=new RegExp(mp+'\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})','gi');
+  while(m=b.exec(t))out.push({i:m.index,d:iso(m[3],MON.indexOf(m[1].toLowerCase())+1,m[2])});
+  const c=/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/g;
+  while(m=c.exec(t))out.push({i:m.index,d:iso(m[3],m[2],m[1])});
+  const e=/(\d{4})-(\d{2})-(\d{2})/g;
+  while(m=e.exec(t))out.push({i:m.index,d:m[0]});
+  return out.filter(x=>!isNaN(new Date(x.d))).sort((x,y)=>x.i-y.i);
+}
+function guessCat(t){t=t.toLowerCase();
+  if(/project (staff|associate|scientist|fellow|assistant)|\bjrf\b|\bsrf\b|research associate/.test(t))return'staff';
+  if(/post-?doc/.test(t))return'postdoc';
+  if(/ph\.?\s?d|doctoral/.test(t))return'phd';
+  if(/assistant professor|associate professor|faculty|professor of/.test(t))return'faculty';
+  return'conference';}
+function parse(t){
+  const lines=t.split('\n').map(s=>s.replace(/[*_~]/g,'').replace(/^[^A-Za-z0-9]+/,'').trim()).filter(Boolean);
+  const ds=findDates(t);
+  const dl=ds.find(x=>/deadline|last date|apply|before|by/i.test(t.slice(Math.max(0,x.i-60),x.i)))||ds[0];
+  const link=(t.match(/https?:\/\/[^\s)>\]]+/)||[])[0]||'';
+  const mail=(t.match(/[\w.+-]+@[\w-]+\.[\w.-]+/)||[])[0]||'';
+  return{cat:guessCat(t),title:(lines[0]||'').slice(0,140),deadline:dl?dl.d:'',url:link||(mail?'mailto:'+mail:'')};
+}
+['cat','title','url','dl'].forEach(i=>$('#'+i).addEventListener('input',()=>{touched.add(i);showDup()}));
+$('#info').addEventListener('input',()=>{
+  if(editId)return;
+  const r=parse($('#info').value);
+  if(!touched.has('cat'))$('#cat').value=r.cat;
+  if(!touched.has('title'))$('#title').value=r.title;
+  if(!touched.has('url'))$('#url').value=r.url;
+  if(!touched.has('dl'))$('#dl').value=r.deadline;
+  showDup();
+});
+$('#ai').onclick=async()=>{
+  const text=$('#info').value.trim();if(!text)return;
+  const b=$('#ai');b.textContent='Reading…';$('#ferr').textContent='';
+  const {data,error}=await sb.functions.invoke('parse-post',{body:{text}});
+  b.textContent='Improve with AI (optional)';
+  if(error||!data||data.error){$('#ferr').textContent='AI parse is not set up yet. The basic fill still works.';return}
+  if(CATS[data.category])$('#cat').value=data.category;
+  if(data.title)$('#title').value=data.title;
+  if(data.deadline)$('#dl').value=data.deadline;
+  if(data.url)$('#url').value=data.url;
+  showDup();
+};
+
+/* ---------- duplicate warning ---------- */
+const norm=s=>(s||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+const nurl=u=>(u||'').toLowerCase().replace(/^https?:\/\/(www\.)?/,'').replace(/[?#].*$/,'').replace(/\/$/,'');
+function jac(a,b){
+  const x=new Set(a.split(' ').filter(w=>w.length>2)),y=new Set(b.split(' ').filter(w=>w.length>2));
+  if(!x.size||!y.size)return 0;
+  let n=0;x.forEach(w=>y.has(w)&&n++);return n/(x.size+y.size-n);
+}
+function findDup(){
+  const t=norm($('#title').value),u=nurl($('#url').value);
+  return posts.find(p=>p.id!==editId&&((u.includes('/')&&nurl(p.url)===u)||(t&&jac(t,norm(p.title))>=0.7)));
+}
+function showDup(){
+  const d=findDup(),el=$('#dup');
+  el.hidden=!d;
+  if(d)el.innerHTML='Possible duplicate: <b>'+esc(d.title)+'</b> ('+(d.published?'published':'draft')+'). <button class="btn" data-dupedit="'+d.id+'">Edit that post instead</button>';
+}
+$('#dup').onclick=e=>{if(e.target.dataset.dupedit)editPost(e.target.dataset.dupedit)};
+
+/* ---------- channel post ---------- */
+function channelText(p){
+  const info=$('#det').checked&&p.info?'\n\n'+p.info.trim().slice(0,500)+(p.info.length>500?'…':''):'';
+  return '*'+CATS[p.category]+': '+p.title+'*'+(p.deadline?'\nDeadline: '+fmt(p.deadline):'')+(p.url?'\n'+p.url:'')+info+
+    '\n\nAll openings: '+SITE+'\nFollow: '+CFG.CHANNEL;
+}
+function copy(text,btn){
+  const done=()=>{const o=btn.textContent;btn.textContent='Copied';setTimeout(()=>btn.textContent=o,1300)};
+  if(navigator.clipboard)navigator.clipboard.writeText(text).then(done,()=>prompt('Copy this:',text));
+  else{const t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();done()}
+}
+const formPost=()=>({category:$('#cat').value,title:$('#title').value.trim(),info:$('#info').value.trim(),url:$('#url').value.trim(),deadline:$('#dl').value});
+$('#chan').onclick=e=>{const p=formPost();if(!p.title){$('#ferr').textContent='Add a title first.';return}copy(channelText(p),e.target)};
+
+/* ---------- auth + posts ---------- */
+function view(session){
+  $('#login').style.display=session?'none':'block';
+  $('#app').style.display=session?'block':'none';
+  if(session)load();
+}
+async function load(){
+  const {data,error}=await sb.from('posts').select('*').order('created_at',{ascending:false});
+  if(error){$('#list').innerHTML='<p class="empty">'+esc(error.message)+'</p>';return}
+  posts=data;
+  $('#list').innerHTML=posts.length?posts.map(p=>
+    '<article class="card"><div class="body"><span class="b cat">'+CATS[p.category]+'</span>'+
+    '<span class="b">'+(p.published?'Published':'Draft')+'</span>'+(p.deadline?'<span class="b">'+p.deadline+'</span>':'')+
+    '<h2>'+esc(p.title)+'</h2><div class="act">'+
+    '<button class="btn" data-edit="'+p.id+'">Edit</button>'+
+    '<button class="btn wa" data-chan="'+p.id+'">Copy channel post</button>'+
+    '<button class="btn" data-tog="'+p.id+'">'+(p.published?'Unpublish':'Publish')+'</button>'+
+    '<button class="btn del" data-del="'+p.id+'">Delete</button></div></div></article>').join('')
+    :'<p class="empty">No posts yet.</p>';
+  showDup();
+}
+function reset(){
+  editId=null;touched.clear();['title','info','url','dl'].forEach(i=>$('#'+i).value='');
+  $('#pin').checked=false;$('#pub').checked=true;$('#cat').value='conference';
+  $('#ftitle').textContent='New post';$('#cancel').style.display='none';$('#ferr').textContent='';$('#dup').hidden=true;
+}
+function editPost(id){
+  const p=posts.find(x=>x.id===id);editId=p.id;
+  $('#cat').value=p.category;$('#title').value=p.title;$('#info').value=p.info||'';$('#url').value=p.url||'';
+  $('#dl').value=p.deadline||'';$('#pin').checked=p.pinned;$('#pub').checked=p.published;
+  $('#ftitle').textContent='Edit post';$('#cancel').style.display='inline-block';$('#dup').hidden=true;
+  scrollTo({top:0,behavior:'smooth'});
+}
+
+$('#in').onclick=async()=>{
+  $('#lerr').textContent='';
+  const {error}=await sb.auth.signInWithPassword({email:$('#em').value.trim(),password:$('#pw').value});
+  if(error)$('#lerr').textContent='Login failed: '+error.message;
+  else sb.auth.getSession().then(({data})=>view(data.session));
+};
+$('#out').onclick=async()=>{await sb.auth.signOut();view(null)};
+$('#cancel').onclick=reset;
+$('#save').onclick=async()=>{
+  const p=formPost();
+  if(!p.title){$('#ferr').textContent='Add a post title.';return}
+  const d=findDup();
+  if(d&&!confirm('This looks like a duplicate of "'+d.title+'". Save anyway?'))return;
+  const row={category:p.category,title:p.title,info:p.info||null,url:p.url||null,deadline:p.deadline||null,
+    pinned:$('#pin').checked,published:$('#pub').checked};
+  const {error}=await(editId?sb.from('posts').update(row).eq('id',editId):sb.from('posts').insert(row));
+  if(error){$('#ferr').textContent=error.message;return}
+  reset();load();
+};
+$('#list').onclick=async e=>{
+  const d=e.target.dataset;
+  if(d.edit)editPost(d.edit);
+  if(d.chan)copy(channelText(posts.find(x=>x.id===d.chan)),e.target);
+  if(d.tog){const p=posts.find(x=>x.id===d.tog);await sb.from('posts').update({published:!p.published}).eq('id',p.id);load()}
+  if(d.del&&confirm('Delete this post for good?')){await sb.from('posts').delete().eq('id',d.del);load()}
+};
+sb.auth.getSession().then(({data})=>view(data.session));
+</script>
+</body>
+</html>
