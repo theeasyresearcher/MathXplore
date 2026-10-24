@@ -21,7 +21,7 @@
 <nav class="tabs" id="tabs"></nav>
 <div class="bar">
   <input type="search" id="q" placeholder="Search posts" aria-label="Search posts">
-  <select id="sort" aria-label="Sort by" style="width:auto"><option value="deadline">Sort: Deadline</option><option value="updated">Sort: Last updated</option></select>
+  <select id="sort" aria-label="Sort by" style="width:auto"><option value="deadline">Sort: Deadline</option><option value="updated" selected>Sort: Last updated</option></select>
   <div class="seg" id="mode"><button data-mode="open" class="on">Open</button><button data-mode="archive">Archive</button></div>
   <button class="btn" id="all">Select all shown</button>
   <button class="btn cpy">Copy digest</button>
@@ -43,7 +43,7 @@ const CATS={conference:'Conference',phd:'PhD',postdoc:'Postdoc',staff:'Project s
 const $=s=>document.querySelector(s);
 const sb=supabase.createClient(CFG.URL,CFG.KEY);
 $('#follow').href=CFG.CHANNEL;
-let posts=[],cat='all',mode='open',by='deadline',sel=new Set(),hl=location.hash.slice(1);
+let posts=[],cat='all',mode='open',by='updated',sel=new Set(),hl=location.hash.slice(1);
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const site=()=>location.href.split('#')[0];
 const days=d=>Math.ceil((new Date(d+'T23:59:59')-Date.now())/864e5);
@@ -135,5 +135,7 @@ sb.from('posts').select('*').eq('published',true).then(({data,error})=>{
   render();
 });
 </script>
+<script data-goatcounter="https://mathxlore.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
